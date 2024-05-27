@@ -9,11 +9,11 @@
 
 #include "reporting_service.h"
 #include "parse.h"
-#include "../imports/json/single_include/nlohmann/json.hpp"
+//#include "../imports/json/single_include/nlohmann/json.hpp"
 
 namespace scales_client {
 using namespace std::chrono;
-using json = nlohmann::json;
+//using json = nlohmann::json;
 using parser = string_tools::parser;
 
 #define USES_WAIT_UNTIL
