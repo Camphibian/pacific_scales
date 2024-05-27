@@ -26,20 +26,22 @@ If you dont have a driver matching the chipset for your USB device you will need
 Otherwise you can install a supported module (2102 in my case)
 $ sudo insmod /lib/modules/5.15.146.1-microsoft-standard-WSL2/kernel/drivers/usb/serial/cp210x.ko
 
-Then you should see the USB serial in /dev/ttyUSB0
+You should be able to see the USB serial on /dev/ttyUSB0
 $ lsusb
 Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
 Bus 001 Device 014: ID 10c4:ea60 Silicon Labs CP210x UART Bridge
 Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
--------------------
 
-Repository
-----------
+Repository:
 git clone https://github.com/Camphibian/pacific_scales.git
+
 $ cd pacific_scales/PacificScales_Client
+
 $ make
+
 $ ./psclient -l
-will list all serial devices, select the one the simulator isconnected to
+
+will list all serial devices, select the one the simulator is connected to
 
 $./psclient -c /dev/ttyUSB0
 
