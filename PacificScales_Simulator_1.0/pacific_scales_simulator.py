@@ -28,7 +28,7 @@ Known Issues:
     has not been calibrated.
 """
 
-import ConfigParser, csv, time, serial
+import configparser, csv, time, serial
 
 
 def form_scales_pkt(scale_type, per_ch, mass):
@@ -65,21 +65,24 @@ def serial_data_write(port, baud, timeout, buf):
 
     try:
         ser.open()
-    except Exception, err: #serial.SerialException:
+    #except Exception(err): #serial.SerialException:
+    except serial.SerialException as err:
         print("Error sending data through serial port: " + str(err))
         exit()
 
     if ser.isOpen():
         print("Serial port open for comms")
         try:
-            ser.flushInput()
-            ser.flushOutput()
-            ser.write(buf)
+            #ser.flushInput()
+            #ser.flushOutput()
+            bytes_out = ser.write(buf)
             ser.flush()
-            print("Write data: \n%s" % buf)
+            print("Write data:%i" % bytes_out)
+            print("%s" % buf)
 
-        except Exception, e:
-            print("Error communicating to serial: " + str(e))
+        #except Exception(e):
+        except Exception as err2:
+            print("Error communicating to serial: " + str(err2))
     else:
         print("Cannot open serial port")
 
@@ -89,7 +92,7 @@ def serial_data_write(port, baud, timeout, buf):
 def serialize_data_from_file(input_file, device, baud, periodicity, num_of_ch):
     with open(('./' + input_file.strip('\'\"'))) as inputfile:
        inputData = csv.reader(inputfile)
-       inputData.next()
+       inputData.__next__() # this is supposed to skip a row [.next() not exist]
        for row in inputData:
            total_mass = 0
            mass_per_ch = list()
@@ -98,18 +101,60 @@ def serialize_data_from_file(input_file, device, baud, periodicity, num_of_ch):
                total_mass += int(row[ch_num])
 
            # Create the packet to be transmitted over serial line
-           pkt_buf = form_scales_pkt(num_of_ch, mass_per_ch, total_mass)
-
-           # send the packet over serial port
+           #pkt_buf = form_scales_pkt(num_of_ch, mass_per_ch, total_mass)
+           txt_buf = form_scales_pkt(num_of_ch, mass_per_ch, total_mass)
+           txt_buf = "Dump a long line of crap"
+           # send the packet over serial port, but this must be a byte array
+           #NOTE: the CR/LF is sent as ascii \r\n instead of binary 0x0a, 0x0b
+           pkt_buf = txt_buf.encode('ascii', errors='ignore')
            serial_data_write(device.strip('\'\"'), baud, 1, pkt_buf)
+           #serial_data_write(device.strip('\'\"'), baud, periodicity, pkt_buf)
 
            time.sleep(periodicity)
 
     return;
 
+def generate_packet(ser, input_file, periodicity, num_of_ch):
+    with open(('./' + input_file.strip('\'\"'))) as inputfile:
+       inputData = csv.reader(inputfile)
+       inputData.__next__() # this is supposed to skip a row [.next() not exist]
+       for row in inputData:
+           total_mass = 0
+           mass_per_ch = list()
+           for ch_num in range(0, num_of_ch):
+               mass_per_ch.append(int(row[ch_num]))
+               total_mass += int(row[ch_num])
+
+           # Create the packet to be transmitted over serial line
+           #pkt_buf = form_scales_pkt(num_of_ch, mass_per_ch, total_mass)
+           txt_buf = form_scales_pkt(num_of_ch, mass_per_ch, total_mass)
+           #txt_buf = "Dump a long line of crap"
+           # send the packet over serial port, but this must be a byte array
+           #NOTE: the CR/LF is sent as ascii \r\n instead of binary 0x0a, 0x0b
+           pkt_buf = txt_buf.encode('ascii', errors='ignore')
+
+           serialise_packet(ser, pkt_buf)
+           time.sleep(periodicity)
+    return pkt_buf;
+
+def serialise_packet(ser, pkt_buf):
+    if ser.isOpen():
+        try:
+            #ser.flushInput()
+            #ser.flushOutput()
+            bytes_out = ser.write(pkt_buf)
+            ser.flush()
+            #print("Write data:%i" % bytes_out)
+            print("%s" % pkt_buf)
+
+        #except Exception(e):
+        except Exception as err2:
+            print("Error communicating to serial: " + str(err2))
+    return;
 
 def pacific_scale_sim():
-    configParser = ConfigParser.RawConfigParser()
+    configParser = configparser.ConfigParser(inline_comment_prefixes = (";",))
+
     configFilePath = r'scales_simulator_config.cfg'
     configParser.read(configFilePath)
 
@@ -128,12 +173,30 @@ def pacific_scale_sim():
     print("Input CSV File       : %s" % inFile)
 
     condition = True
-    while condition:
-        serialize_data_from_file(inFile, serial_dev, serial_baud, sim_period, sim_type)
+    #open serial port
+    ser = serial.Serial()
+    ser.port     = serial_dev
+    ser.baudrate = serial_baud
+    ser.bytesize = serial.EIGHTBITS #number of bits per bytes
+    ser.parity   = serial.PARITY_NONE #set parity check: no parity
+    ser.stopbits = serial.STOPBITS_ONE #number of stop bits
+    ser.timeout  = 1            #non-block read
+    ser.xonxoff  = False     #disable software flow control
 
+    try:
+        ser.open()
+        print("Serial port open for comms")
+    except serial.SerialException as err:
+        print("Error opening serial port: " + str(err))
+        exit()
+
+    while condition:
+        generate_packet(ser, inFile, sim_period, sim_type)
+        #serialize_data_from_file(inFile, serial_dev, serial_baud, sim_period, sim_type)
         if(sim_mode.strip('\'\"') != 'loop'):
             condition = False
-
+    #close serial port
+    ser.close();
     return;
 
 pacific_scale_sim()
