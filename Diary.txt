@@ -1,0 +1,177 @@
+dVRaa5QvF2fyWS6
+Install WSL2 on Windows 10 (powershell admin)
+wsl --install
+
+WSL 2 has a kernel and a distro (Ubuntu)
+Updating WSL to use Ubuntu
+https://gist.github.com/rutcreate/c0041e842f858ceb455b748809763ddb
+
+sudo apt update
+sudo apt install software-properties-common -y
+
+Install python 3.10.X
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+
+sudo apt install python3.10 python3.10-venv python3.10-dev
+python3 --version (3.10.12)
+
+
+Install pyserial
+python3.10 -m pip install pyserial
+
+Install the gcc suite (holy moly)
+sudo apt-get install g++
+
+Find kernel version
+https://blog.golioth.io/program-mcu-from-wsl2-with-usb-support/
+uname -a
+Linux DESKTOP-OFR57C7 5.15.146.1-microsoft-standard-WSL2 #1 SMP Thu Jan 11 04:09:03 UTC 2024 x86_64 x86_64 x86_64 GNU/Linux
+
+Default WSL/Ubuntu does not have access to USB/Serial devices!
+--------------------------------------------------------------
+Connect USB devices
+https://learn.microsoft.com/en-us/windows/wsl/connect-usb
+
+download WSL 2 extension to support USB serial ports
+https://github.com/dorssel/usbipd-win/releases/tag/v4.2.0
+usbipd-win_4.2.0.msi
+
+transfer ownership of usb device to WSL, (powershell admin)
+usbipd list
+...
+3-3    067b:2303  Prolific USB-to-Serial Comm Port (COM5)                       Not shared
+...
+(3-3 is the usb serial device i just plugged in)
+
+usbipd bind --busid <busid>
+(3-3 is the usb serial device i just plugged in)
+usbipd attach --wsl --busid <busid>
+
+usbipd list
+3-3    067b:2303  Prolific USB-to-Serial Comm Port (COM5)                       Shared
+
+and then in bash on your WSL/Ubuntuls /dev/tty*
+lsusb
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 001 Device 002: ID 067b:2303 Prolific Technology, Inc. PL2303 Serial Port / Mobile Action MA-8910P <--- this is the one
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+
+In tty-land
+ls /dev/ttyS*
+/dev/ttyS0
+/dev/ttyS1
+/dev/ttyS2
+/dev/ttyS3
+hmm thats weird, I plugged in a 4x but only attached one port
+I dont think these are serial ports!
+
+Anyway unplugging the USB serial does this:
+ON windows 10 it correctly shows the device depending on connection state
+It shows the shared one as shared:
+3-3    067b:2303  Prolific USB-to-Serial Comm Port (COM5)                       Shared
+
+but in WSL/Ubuntu, the device is no longer listed even after replugging USB <--- BUG?
+
+Restarting WSL/Ubuntu:
+it not come back :(
+There is an unbind command:
+usbipd unbind --busid <busid>
+this stops it being shared!
+
+SO after removing device and plugging it back in, you will need to attach in powershell (bleah!)
+Keep that in mind!
+------------------------
+So now we have a shared USB->serial adapter shared from host to WSL!
+Now I just need to find it in Ubuntu land
+
+Setserial
+---------
+sudo apt install setserial
+CAUTION: Using an invalid port can lock up your machine! <--- wtf... serial ports under Ubuntu are garbage 70's
+
+
+lsusb
+-----
+lsusb -D /dev/bus/usb/001/003 <-- on the WSL/Ubuntu
+
+device details
+--------------
+Bus 001 Device 006: ID 067b:2303 Prolific Technology, Inc. PL2303 Serial Port / Mobile Action MA-8910P
+
+--------------
+What is this???
+sudo modprobe usbserial idVendor=0x067b idProduct=0x2303
+
+
+----------
+Ubuntu version
+lsb_release -a
+---------------
+
+
+See if kernel drivers present
+-----------------------------
+find /lib/modules/$( uname -r ) | grep usb/serial
+
+Path to drivers
+---------------
+ls /lib/modules/5.15.146.1-microsoft-standard-WSL2/kernel/drivers/usb/serial/ <-- uname -r gives the kernel name
+
+Ensure driver loaded (register interface driver)
+--------------------------------------------------
+sudo insmod /lib/modules/5.15.146.1-microsoft-standard-WSL2/kernel/drivers/usb/serial/cp210x.ko <--- wrong one, need PL2303
+
+--------------------
+Edit the driver list: UNNECCESSARY simply replug device
+--------------------
+nano /sys/bus/usb-serial/drivers/cp210x/new_id
+
+But file is unwritable so check permissions
+-------------------------------------------
+ls -l  /sys/bus/usb-serial/drivers/cp210x/new_id
+stat -c "%s %n"  /sys/bus/usb-serial/drivers/cp210x/new_id
+-------------------------------------------------------------
+
+After registering interface driver you will need to replug device and if using WSL2 usb deviuce binding then re-attach with usbipd
+
+--------------------------
+JSON: N Lohmann MIT licensed library
+mkdir imports
+cd imports
+git clone https://github.com/nlohmann/json.git
+
+Various personal imports
+wait_until
+
+------------------
+Simulator (Pyhton 2 or Python 3)
+Fact is the simulator is extremely broken in Python 3 requiring out of scope work
+The commentary clearly indicates the simulator was not tested on python 3 AT ALL
+
+----
+updated the (python 2) version to python 3
+a) Exception handling syntax
+
+import modules from repo (Powershell)
+pip install ConfigParser
+
+the name 'ConfigParser' is not PEP 8 compliant, use 'configparser' instead and update simulator code
+The simulator should run in python 2 but it is so obsolete
+
+errors in file: scales_simulator_config.cfg
+comments are invalid unles inline comment prefix is specified
+Replace
+    configParser = configparser.RawConfigParser()
+with
+    configParser = configparser.ConfigParser(inline_comment_prefixes = (";",))
+
+
+Reference
+https://docs.python.org/3/library/configparser.html
+
+---------------
+
+Simulator is broken due to serial device being deleted before sending is complete.
+The port must remain open during send and since the device is deleted on return from function data is lost
+A complete restructuring of the code is mandated as it is currently garbage and will not work at all
